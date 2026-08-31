@@ -74,7 +74,7 @@ function verificarApiKeyYLimites(req, res, next) {
 }
 
 app.post('/v1/chat/completions', verificarApiKeyYLimites, async (req, res) => {
-    const { model, messages, stream, temperature, max_tokens } = req.body;
+    const { model, messages, temperature, max_tokens } = req.body;
 
     if (model !== 'aqirax-flash') {
         return res.status(400).json({
@@ -92,35 +92,33 @@ app.post('/v1/chat/completions', verificarApiKeyYLimites, async (req, res) => {
             body: JSON.stringify({
                 model: 'deepseek-v4-flash',
                 messages: messages || [{ role: 'user', content: 'Hello World' }],
-                stream: stream !== undefined ? stream : true,
+                stream: false, // Forzamos a falso para recibir el bloque JSON completo de un solo golpe
                 temperature: temperature !== undefined ? temperature : 0.7,
                 max_tokens: max_tokens !== undefined ? max_tokens : 1000,
             }),
         });
 
+        const rawText = await responseB.text();
+
         if (!responseB.ok) {
-            const errorText = await responseB.text();
             return res.status(responseB.status).json({
-                error: "Error al comunicarse con el servidor principal.",
-                details: errorText
+                error: "Error al comunicarse con el proveedor principal.",
+                details: rawText
             });
         }
 
-        if (stream) {
-            res.setHeader('Content-Type', 'text/event-stream');
-            res.setHeader('Cache-Control', 'no-cache');
-            res.setHeader('Connection', 'keep-alive');
-            
-            responseB.body.pipe(res);
-        } else {
-            const data = await responseB.json();
-            if (data.model) data.model = 'aqirax-flash';
-            return res.json(data);
+        let cleanText = rawText.trim();
+        if (cleanText.startsWith("data:")) {
+            cleanText = cleanText.replace(/^data:\s*/gm, "");
         }
 
+        const data = JSON.parse(cleanText);
+        if (data.model) data.model = 'aqirax-flash';
+        return res.json(data);
+
     } catch (error) {
-        console.error("Error conectando con la API", error);
-        return res.status(500).json({ error: "Error interno procesando la solicitud con el servidor. ⚠️" });
+        console.error("Error conectando con la API:", error);
+        return res.status(500).json({ error: "Error interno procesando la solicitud con el servidor. ⚠️", details: error.message });
     }
 });
 
