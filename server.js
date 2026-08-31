@@ -4,7 +4,6 @@ const app = express();
 
 app.use(express.json());
 
-
 let partnersKeys = {};
 let normalKeys = {};
 
@@ -16,34 +15,28 @@ try {
     normalKeys = JSON.parse(fs.readFileSync('./apikeys.json', 'utf8'));
 } catch (e) { console.log("No se pudo cargar apikeys.json 🛑"); }
 
-
 const limites = {
     partner: { rpm: 200, rpd: 3500 },
     normal: { rpm: 50, rpd: 1000 }
 };
 
-
 const usoClientes = {};
 
-// Middleware de autenticación y control de límites
 function verificarApiKeyYLimites(req, res, next) {
     const authHeader = req.headers['authorization'];
     if (!authHeader) {
-        return res.status(401).json({ error: "Falta la API Key de Xentury o está mal formateada. " });
+        return res.status(401).json({ error: "Falta la API Key de Xentury o está mal formateada. 🛑" });
     }
 
     const token = authHeader.split(' ')[1];
-    let userData = null;
     let userType = '';
 
     if (partnersKeys[token]) {
-        userData = partnersKeys[token];
         userType = 'partner';
     } else if (normalKeys[token]) {
-        userData = normalKeys[token];
         userType = 'normal';
     } else {
-        return res.status(403).json({ error: "API Key inválida o no registrada. " });
+        return res.status(403).json({ error: "API Key inválida o no registrada. 🛑" });
     }
 
     const ahora = Date.now();
@@ -68,45 +61,72 @@ function verificarApiKeyYLimites(req, res, next) {
     const limits = limites[userType];
 
     if (registro.rpmCount >= limits.rpm) {
-        return res.status(429).json({ error: "Límite de peticiones por minuto (RPM) excedido. " });
+        return res.status(429).json({ error: "Límite de peticiones por minuto (RPM) excedido. ⏳" });
     }
     if (registro.rpdCount >= limits.rpd) {
-        return res.status(429).json({ error: "Límite de peticiones por día (RPD) excedido. " });
+        return res.status(429).json({ error: "Límite de peticiones por día (RPD) excedido. 📅" });
     }
 
     registro.rpmCount++;
     registro.rpdCount++;
 
-    req.user = userData;
-    req.userType = userType;
     next();
 }
 
-// Endpoint de chat con validación estricta del modelo aqirax-flash
-app.post('/v1/chat/completions', verificarApiKeyYLimites, (req, res) => {
-    const { model, messages } = req.body;
+app.post('/v1/chat/completions', verificarApiKeyYLimites, async (req, res) => {
+    const { model, messages, stream, temperature, max_tokens } = req.body;
 
-    // Validación estricta del modelo
     if (model !== 'aqirax-flash') {
         return res.status(400).json({
-            error: "Modelo inválido. El único modelo disponible en Xentury API es 'aqirax-flash'"
+            error: "Modelo inválido. El único modelo disponible en Xentury API es 'aqirax-flash'. 🤖❌"
         });
     }
 
-    res.json({
-        success: true,
-        tier: req.userType,
-        limits_applied: limites[req.userType],
-        user_info: req.user,
-        message: `Petición procesada con éxito para el modelo ${model}`,
-        response: {
-            role: "assistant",
-            content: `¡Hola pana! Saludos desde Xentury API con ${model} (${req.userType.toUpperCase()}). Todo en orden. `
+    try {
+        const responseB = await fetch('https://api.b.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer Ysk-grlzl5nu8qojpv4g86s6dfsqjqh6ksdx',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: 'deepseek-v4-flash',
+                messages: messages || [{ role: 'user', content: 'Hello World' }],
+                stream: stream !== undefined ? stream : true,
+                temperature: temperature !== undefined ? temperature : 0.7,
+                max_tokens: max_tokens !== undefined ? max_tokens : 1000,
+            }),
+        });
+
+        if (!responseB.ok) {
+            const errorText = await responseB.text();
+            return res.status(responseB.status).json({
+                error: "Error al comunicarse con el proveedor principal.",
+                details: errorText
+            });
         }
-    });
+
+        // Si el cliente pidió stream, pipeamos la respuesta directamente; sino, la devolvemos como JSON
+        if (stream) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            
+            responseB.body.pipe(res);
+        } else {
+            const data = await responseB.json();
+            // Opcional: cambiamos el nombre del modelo devuelto para que coincida con aqirax-flash si lo deseas
+            if (data.model) data.model = 'aqirax-flash';
+            return res.json(data);
+        }
+
+    } catch (error) {
+        console.error("Error conectando con la API b.ai:", error);
+        return res.status(500).json({ error: "Error interno procesando la solicitud con el proveedor. ⚠️" });
+    }
 });
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-    console.log(` API de Xentury corriendo en puerto ${PORT}`);
+    console.log(`🔥 API de Xentury corriendo en puerto ${PORT}`);
 });
