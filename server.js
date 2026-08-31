@@ -86,7 +86,7 @@ app.post('/v1/chat/completions', verificarApiKeyYLimites, async (req, res) => {
         const responseB = await fetch('https://api.b.ai/v1/chat/completions', {
             method: 'POST',
             headers: {
-                'Authorization': 'Bearer Ysk-grlzl5nu8qojpv4g86s6dfsqjqh6ksdx',
+                'Authorization': 'Bearer sk-qhxdkr7uyvl64f013ez3deiliw0ix3kj',
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -106,7 +106,6 @@ app.post('/v1/chat/completions', verificarApiKeyYLimites, async (req, res) => {
             });
         }
 
-        // Si el cliente pidió stream, pipeamos la respuesta directamente; sino, la devolvemos como JSON
         if (stream) {
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
@@ -115,7 +114,6 @@ app.post('/v1/chat/completions', verificarApiKeyYLimites, async (req, res) => {
             responseB.body.pipe(res);
         } else {
             const data = await responseB.json();
-            // Opcional: cambiamos el nombre del modelo devuelto para que coincida con aqirax-flash si lo deseas
             if (data.model) data.model = 'aqirax-flash';
             return res.json(data);
         }
