@@ -95,6 +95,7 @@ app.post('/v1/chat/completions', verificarApiKeyYLimites, async (req, res) => {
                 stream: false, // Forzamos a falso para recibir el bloque JSON completo de un solo golpe
                 temperature: temperature !== undefined ? temperature : 0.7,
                 max_tokens: max_tokens !== undefined ? max_tokens : 1000,
+                reasoning_effort: false,
             }),
         });
 
