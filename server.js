@@ -101,7 +101,7 @@ app.post('/v1/chat/completions', verificarApiKeyYLimites, async (req, res) => {
         if (!responseB.ok) {
             const errorText = await responseB.text();
             return res.status(responseB.status).json({
-                error: "Error al comunicarse con el proveedor principal.",
+                error: "Error al comunicarse con el servidor principal.",
                 details: errorText
             });
         }
@@ -119,8 +119,8 @@ app.post('/v1/chat/completions', verificarApiKeyYLimites, async (req, res) => {
         }
 
     } catch (error) {
-        console.error("Error conectando con la API b.ai:", error);
-        return res.status(500).json({ error: "Error interno procesando la solicitud con el proveedor. ⚠️" });
+        console.error("Error conectando con la API", error);
+        return res.status(500).json({ error: "Error interno procesando la solicitud con el servidor. ⚠️" });
     }
 });
 
