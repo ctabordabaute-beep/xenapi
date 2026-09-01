@@ -74,7 +74,7 @@ function verificarApiKeyYLimites(req, res, next) {
 }
 
 app.post('/v1/chat/completions', verificarApiKeyYLimites, async (req, res) => {
-    const { model, messages, temperature, max_tokens } = req.body;
+    const { model, messages, stream, temperature, max_tokens } = req.body;
 
     if (model !== 'aqirax-flash') {
         return res.status(400).json({
@@ -92,30 +92,36 @@ app.post('/v1/chat/completions', verificarApiKeyYLimites, async (req, res) => {
             body: JSON.stringify({
                 model: 'deepseek-v4-flash',
                 messages: messages || [{ role: 'user', content: 'Hello World' }],
-                stream: false, // Forzamos a falso para recibir el bloque JSON completo de un solo golpe
+                stream: stream !== undefined ? stream : true,
                 temperature: temperature !== undefined ? temperature : 0.7,
                 max_tokens: max_tokens !== undefined ? max_tokens : 1000,
-                
             }),
         });
 
-        const rawText = await responseB.text();
-
         if (!responseB.ok) {
+            const errorText = await responseB.text();
             return res.status(responseB.status).json({
-                error: "Error al comunicarse con el sv principal.",
-                details: rawText
+                error: "Error al comunicarse con el proveedor principal.",
+                details: errorText
             });
         }
 
-        let cleanText = rawText.trim();
-        if (cleanText.startsWith("data:")) {
-            cleanText = cleanText.replace(/^data:\s*/gm, "");
+        if (stream || stream === undefined) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            
+            responseB.body.pipe(res);
+        } else {
+            const rawText = await responseB.text();
+            let cleanText = rawText.trim();
+            if (cleanText.startsWith("data:")) {
+                cleanText = cleanText.replace(/^data:\s*/gm, "");
+            }
+            const data = JSON.parse(cleanText);
+            if (data.model) data.model = 'aqirax-flash';
+            return res.json(data);
         }
-
-        const data = JSON.parse(cleanText);
-        if (data.model) data.model = 'aqirax-flash';
-        return res.json(data);
 
     } catch (error) {
         console.error("Error conectando con la API:", error);
