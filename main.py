@@ -1,17 +1,19 @@
 import os
 import json
 import time
-from typing import Dict
-from fastapi import FastAPI, Header, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
+from typing import Dict, List, Optional
+from fastapi import FastAPI, Header, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse, Response
+from pydantic import BaseModel
 import httpx
 
-app = FastAPI()
+app = FastAPI(title="Aqirax API Wrapper ⚡")
+security = HTTPBearer()
 
 def load_keys():
     keys = {}
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    
     
     path_normales = os.path.join(base_dir, "API-Normales.json")
     if os.path.exists(path_normales):
@@ -20,7 +22,6 @@ def load_keys():
             for item in data.get("API-Normales", []):
                 keys[item["key"]] = {"rpm": 30, "rpd": 1000}
                 
-    
     path_especiales = os.path.join(base_dir, "API-Especiales.json")
     if os.path.exists(path_especiales):
         with open(path_especiales, "r", encoding="utf-8") as f:
@@ -44,6 +45,14 @@ TARGET_API = "https://api.b.ai/v1/chat/completions"
 REAL_BEARER = os.getenv("REAL_BEARER", "sk-pucbbh5ip48uy56d2wxnt9ixe6zmfnus")
 ALLOWED_MODEL = "aqirax-eco-3.1"
 
+# Modelo Pydantic para el Body en Swagger
+class ChatCompletionRequest(BaseModel):
+    model: str = "aqirax-eco-3.1"
+    messages: List[dict]
+    stream: Optional[bool] = False
+    temperature: Optional[float] = 0.7
+    max_tokens: Optional[int] = 1000
+
 def check_rate_limit(key: str):
     now = time.time()
     limits = VALID_KEYS[key]
@@ -65,35 +74,30 @@ def root():
     return {"status": "online", "service": "Aqirax API Proxy ⚡"}
 
 @app.post("/v1/chat/completions")
-async def chat_completions(request: Request, authorization: str = Header(None)):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
-
-    client_key = authorization.split(" ")[1]
+async def chat_completions(
+    body: ChatCompletionRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    client_key = credentials.credentials
     if client_key not in VALID_KEYS:
         raise HTTPException(status_code=403, detail="Invalid API Key 🔑")
 
-    data = await request.json()
-
-    requested_model = data.get("model")
-    if requested_model != ALLOWED_MODEL:
+    if body.model != ALLOWED_MODEL:
         raise HTTPException(
             status_code=400, 
-            detail=f"Invalid model '{requested_model}'. Only '{ALLOWED_MODEL}' is supported by this endpoint. 🤖"
+            detail=f"Invalid model '{body.model}'. Only '{ALLOWED_MODEL}' is supported. 🤖"
         )
 
     check_rate_limit(client_key)
 
-    is_stream = data.get("stream", False)
-
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + data.get("messages", [])
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + body.messages
     
     payload = {
         "model": "mimo-v2.5",
         "messages": messages,
-        "temperature": data.get("temperature", 0.7),
-        "max_tokens": data.get("max_tokens", 1000),
-        "stream": is_stream
+        "temperature": body.temperature,
+        "max_tokens": body.max_tokens,
+        "stream": body.stream
     }
 
     headers = {
@@ -103,7 +107,7 @@ async def chat_completions(request: Request, authorization: str = Header(None)):
 
     client = httpx.AsyncClient(timeout=60.0)
 
-    if is_stream:
+    if body.stream:
         async def stream_generator():
             async with client.stream("POST", TARGET_API, headers=headers, json=payload) as resp:
                 async for chunk in resp.aiter_bytes():
